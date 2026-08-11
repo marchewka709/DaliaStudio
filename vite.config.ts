@@ -18,6 +18,6 @@ export default defineConfig({
   },
   // @ts-ignore - TanStack Start extends Vite config with nitro options
   nitro: {
-    preset: "vercel",
+    preset: "cloudflare-pages",
   },
 });
