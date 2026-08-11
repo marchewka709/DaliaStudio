@@ -16,4 +16,8 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
+  // @ts-ignore - TanStack Start extends Vite config with nitro options
+  nitro: {
+    preset: "vercel",
+  },
 });
