@@ -6,12 +6,6 @@
   "devCommand": "npm run dev",
   "regions": ["iad1"],
   "cleanUrls": true,
-  "functions": {
-    "server/server.js": {
-      "memory": 1024,
-      "maxDuration": 10
-    }
-  },
   "rewrites": [
     {
       "source": "/(.*)",
