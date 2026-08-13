@@ -4,6 +4,11 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
+  "vars": {
+    "ADMIN_USERNAME": "admin",
+    "ADMIN_PASSWORD": "admin",
+    "AUTH_SECRET": "a484affe3458aa7c4158e0f8d21abc4d791a39468ef9366994491ba9cab97737"
+  },
   "assets": {
     "directory": "dist/client",
     "not_found_handling": "single-page-application"

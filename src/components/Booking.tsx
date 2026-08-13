@@ -6,9 +6,10 @@ import { Check, ChevronLeft, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { SERVICES, TIME_SLOTS, bookedSlots } from "@/lib/salon";
-import { cn } from "@/lib/utils";
 import { Reveal } from "./Reveal";
+import { supabase } from "@/lib/supabase";
+import { SERVICES, TIME_SLOTS } from "@/lib/salon";
+import { cn } from "@/lib/utils";
 
 const STEPS = ["Usługa", "Termin", "Godzina", "Dane"];
 
@@ -26,20 +27,65 @@ export function Booking() {
     [service],
   );
 
-  const booked = useMemo(() => (date ? bookedSlots(date) : []), [date]);
+  // Provide a default date if none selected - use today
+  const effectiveDate = date ?? startOfToday();
+
+  // Fetch booked slots from Supabase
+  const booked = useMemo(() => {
+    if (!date) return [];
+    
+    const formattedDate = format(effectiveDate, "yyyy-MM-dd");
+    const { data, error } = supabase
+      .from("availability")
+      .select("hour")
+      .eq("date", formattedDate)
+      .eq("is_booked", true);
+    
+    if (error) {
+      console.error("Error fetching booked slots:", error);
+      return [];
+    }
+    
+    return data?.map((a: any) => a.hour) || [];
+  }, [date, effectiveDate]);
 
   const disabledDay = (d: Date) => {
     const day = d.getDay();
     return day === 0 || day === 6 || isBefore(d, startOfToday());
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim() || phone.trim().length < 7) {
       toast.error("Uzupełnij imię oraz numer telefonu.");
       return;
     }
-    setDone(true);
-    toast.success("Prośba o rezerwację wysłana. Potwierdzimy ją telefonicznie.");
+    
+    // Check if the selected time slot is available
+    if (time && booked.includes(time)) {
+      toast.error("Ten termin jest już zajęty. Wybierz inny czas.");
+      return;
+    }
+
+    try {
+      // Create booking in Supabase
+      const { error } = await supabase.from("bookings").insert({
+        user_id: "", // Will be filled by RLS
+        service_id: service || "",
+        date: format(effectiveDate, "yyyy-MM-dd"),
+        hour: time,
+        client_name: name,
+        client_phone: phone,
+        status: "pending",
+      });
+
+      if (error) throw error;
+
+      setDone(true);
+      toast.success("Prośba o rezerwację wysłana. Potwierdzimy ją telefonicznie.");
+    } catch (err: any) {
+      console.error("Booking error:", err);
+      toast.error("Wystąpił błąd podczas zapisywania rezerwacji: " + err.message);
+    }
   };
 
   return (
@@ -157,7 +203,7 @@ export function Booking() {
                       <div className="flex flex-col items-center">
                         <Calendar
                           mode="single"
-                          selected={date}
+                          selected={effectiveDate}
                           onSelect={(d) => {
                             setDate(d);
                             setTime(null);

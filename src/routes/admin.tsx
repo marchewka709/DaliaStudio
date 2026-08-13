@@ -1,6 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarDays, Clock, Users, ArrowLeft } from "lucide-react";
-import { HOURS, TIME_SLOTS } from "@/lib/salon";
+import { createFileRoute, Link, useNavigate, redirect } from "@tanstack/react-router";
+import { CalendarDays, Clock, Users, ArrowLeft, LogOut } from "lucide-react";
+import { getSession, logout } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
+import { Database } from "@/lib/_types/supabase";
+import { useState, useMemo, useEffect } from "react";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -21,19 +24,70 @@ export const Route = createFileRoute("/admin")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
+  loader: async () => {
+    const session = await getSession();
+    if (!session) throw redirect({ to: "/login" });
+    return session;
+  },
   component: Admin,
 });
 
-const TODAY = [
-  { time: "9:00", client: "Karolina Sidor", service: "Koloryzacja i Refleksy", status: "Potwierdzona" },
-  { time: "11:00", client: "Kasia S.", service: "Strzyżenie Stylistyczne", status: "Potwierdzona" },
-  { time: "13:00", client: "Zuzanna Łuc", service: "Rytuały Pielęgnacyjne", status: "Oczekuje" },
-  { time: "15:00", client: "Marta W.", service: "Koloryzacja i Refleksy", status: "Oczekuje" },
-];
-
-const BOOKED = new Set(TODAY.map((a) => a.time));
-
 function Admin() {
+  const session = Route.useLoaderData();
+  const user = session?.user ?? "";
+  const navigate = useNavigate();
+
+  // Fetch today's bookings from Supabase
+  const [bookings, setBookings] = useState<Array<{
+    id: string;
+    client_name: string;
+    service: string;
+    time: string;
+    status: string;
+  }>>([]);
+
+  // Get today's date in YYYY-MM-DD format
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+
+  useEffect(() => {
+    const fetchBookings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("bookings")
+          .select("*")
+          .eq("date", todayStr)
+          .order("time", { ascending: true });
+
+        if (error) throw error;
+        setBookings(data || []);
+      } catch (err: any) {
+        console.error("Error fetching bookings:", err);
+      }
+    };
+
+    fetchBookings();
+  }, [todayStr]);
+
+  // Calculate booked hours
+  const bookedHours = useMemo(() => {
+    const hours = new Set(bookings.map((b) => b.time));
+    return hours;
+  }, [bookings]);
+
+  // Calculate free hours (8:00 - 16:00, Monday-Friday)
+  const allHours = useMemo(() => {
+    const hours: string[] = [];
+    for (let h = 8; h < 16; h++) {
+      hours.push(h.toString().padStart(2, "0"));
+    }
+    return hours;
+  }, []);
+
+  const freeHours = useMemo(() => {
+    return allHours.filter((h) => !bookedHours.has(h));
+  }, [allHours, bookedHours]);
+
   return (
     <div className="min-h-screen bg-background px-5 py-12 sm:px-8 sm:py-16">
       <div className="mx-auto max-w-6xl">
@@ -50,42 +104,39 @@ function Admin() {
             <h1 className="mt-3 truncate font-display text-4xl sm:text-5xl">
               Studio Urody <span className="italic text-gold-gradient">Dalia</span>
             </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Zalogowano jako: <span className="font-medium text-gold">{user}</span>
+            </p>
           </div>
-          <span className="shrink-0 rounded-sm border border-gold/40 bg-gold/10 px-4 py-2 text-[0.62rem] uppercase tracking-[0.2em] text-gold">
-            Wersja demo
-          </span>
+          <div className="mt-4 flex items-center gap-3 sm:mt-0">
+            <span className="shrink-0 rounded-sm border border-gold/40 bg-gold/10 px-4 py-2 text-[0.62rem] uppercase tracking-[0.2em] text-gold">
+              Wersja demo
+            </span>
+            <button
+              onClick={async () => {
+                await logout();
+                navigate({ to: "/login", replace: true });
+              }}
+              className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-card/50 px-4 py-2 text-[0.62rem] uppercase tracking-[0.2em] text-foreground transition-colors hover:border-gold hover:text-gold"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Wyloguj
+            </button>
+          </div>
         </header>
 
         <div className="mt-10 grid gap-4 sm:grid-cols-3">
-          {[
-            { icon: CalendarDays, label: "Wizyty dzisiaj", value: TODAY.length },
-            { icon: Clock, label: "Wolne godziny", value: TIME_SLOTS.length - TODAY.length },
-            { icon: Users, label: "Nowe klientki", value: 2 },
-          ].map((s) => (
-            <div key={s.label} className="rounded-sm border border-border bg-card/50 p-6">
-              <s.icon className="h-5 w-5 text-gold" />
-              <p className="mt-4 font-display text-4xl">{s.value}</p>
-              <p className="mt-1 text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">
-                {s.label}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-10 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <section className="rounded-sm border border-border bg-card/40 p-5 sm:p-7">
             <h2 className="font-display text-2xl sm:text-3xl">Lista dzisiejszych wizyt</h2>
             <ul className="mt-6 divide-y divide-border">
-              {TODAY.map((a) => (
+              {bookings.map((a) => (
                 <li
-                  key={a.time}
+                  key={a.id}
                   className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 py-4"
                 >
                   <span className="shrink-0 font-display text-xl text-gold">{a.time}</span>
                   <span className="min-w-0">
-                    <span className="block truncate text-sm text-foreground/90">
-                      {a.client}
-                    </span>
+                    <span className="block truncate text-sm text-foreground/90">{a.client_name}</span>
                     <span className="block truncate text-xs text-muted-foreground">
                       {a.service}
                     </span>
@@ -118,8 +169,8 @@ function Admin() {
               </span>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">
-              {TIME_SLOTS.map((t) => {
-                const taken = BOOKED.has(t);
+              {allHours.map((t) => {
+                const taken = bookedHours.has(t);
                 return (
                   <div
                     key={t}
@@ -129,7 +180,7 @@ function Admin() {
                         : "border-gold/40 bg-gold/5 text-gold"
                     }`}
                   >
-                    <span className="block text-sm">{t}</span>
+                    <span className="block text-sm">{t}:00</span>
                     <span className="mt-1 block text-[0.55rem] uppercase tracking-[0.16em] opacity-80">
                       {taken ? "Zajęte" : "Wolne"}
                     </span>
@@ -137,18 +188,20 @@ function Admin() {
                 );
               })}
             </div>
-            <div className="mt-8 space-y-2">
-              {HOURS.slice(0, 5).map((h) => (
-                <div
-                  key={h.day}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border/50 pb-2 text-xs"
-                >
-                  <span className="truncate text-foreground/75">{h.day}</span>
-                  <span className="text-gold">{h.time}</span>
-                </div>
-              ))}
-            </div>
           </section>
+        </div>
+
+        {/* Stats cards */}
+        <div className="mt-10 grid gap-4 sm:grid-cols-3">
+          {[...bookings.map((_, i) => i), ...Array(3 - bookings.length).keys()].map((_, i) => (
+            <div key={i} className="rounded-sm border border-border bg-card/50 p-6">
+              <CalendarDays className="h-5 w-5 text-gold" />
+              <p className="mt-4 font-display text-4xl">{bookings.length}</p>
+              <p className="mt-1 text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">
+                Wizyty dzisiaj
+              </p>
+            </div>
+          ))}
         </div>
       </div>
     </div>
